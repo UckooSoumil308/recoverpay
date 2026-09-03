@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 import google.generativeai as genai
 
-from agent_engine import recovery_engine
+from agent_engine import recovery_engine, chat_recovery_engine
 from database import get_connection
 
 load_dotenv()
@@ -195,63 +195,79 @@ def run_batch():
 
 
 # ---------------------------------------------------------------------------
-# NEW: LLM-Powered Chat Simulate Endpoint
+# ---------------------------------------------------------------------------
+# Multi-Agent Conversational Recovery Endpoint
 # ---------------------------------------------------------------------------
 @app.post("/api/chat-simulate")
 def chat_simulate(req: ChatRequest):
-    """Invoke Gemini to classify intent, extract date, and draft a Hinglish reply."""
+    """Invoke multi-agent LangGraph system with Gemini & fallback support."""
 
-    parsed = None
-
-    # ------ Step 1: Call Gemini LLM ------
-    try:
-        response = gemini_model.generate_content(
-            [
-                {"role": "user", "parts": [SYSTEM_PROMPT]},
-                {"role": "model", "parts": ['{"intent": "GENERAL", "extracted_date": null, "reply_text": "Ready to help."}']},
-                {"role": "user", "parts": [f"Customer message: {req.message}"]},
-            ]
-        )
-
-        raw_text = response.text.strip()
-
-        # Strip markdown code fences if the LLM wraps them anyway
-        if raw_text.startswith("```"):
-            raw_text = raw_text.split("\n", 1)[-1]  # remove first line
-            if raw_text.endswith("```"):
-                raw_text = raw_text[:-3]
-            raw_text = raw_text.strip()
-
-        parsed = json.loads(raw_text)
-
-        # Validate required keys
-        if not all(k in parsed for k in ("intent", "extracted_date", "reply_text")):
-            raise ValueError("Missing required keys in LLM response")
-
-        # Clamp intent to known values
-        valid_intents = {"PROMISE_TO_PAY", "REQUEST_LINK", "DISPUTE", "GENERAL"}
-        if parsed["intent"] not in valid_intents:
-            parsed["intent"] = "GENERAL"
-
-    except Exception as e:
-        print(f"[LLM ERROR] Gemini failed or returned bad JSON: {e}")
-        parsed = _fallback_response(req.message)
-
-    # ------ Step 2: Database Side-Effects ------
     conn = get_connection()
     cursor = conn.cursor()
 
+    # Look up customer & transaction context from DB
+    cursor.execute("SELECT * FROM transactions WHERE id = ?", (req.transaction_id,))
+    row = cursor.fetchone()
+    txn = dict(row) if row else {}
+
+    customer_name = txn.get("customer_name", "Valued Customer")
+    phone = txn.get("phone", "+919876543210")
+    amount_inr = txn.get("amount_inr", 1499.0)
+    failure_code = txn.get("failure_code", "GATEWAY_TIMEOUT")
+    preferred_language = txn.get("preferred_language", "Hinglish")
+
+    # Run Multi-Agent LangGraph System
     try:
-        if parsed["intent"] == "PROMISE_TO_PAY":
+        agent_state = {
+            "transaction_id": req.transaction_id,
+            "customer_name": customer_name,
+            "phone": phone,
+            "amount_inr": amount_inr,
+            "failure_code": failure_code,
+            "preferred_language": preferred_language,
+            "message": req.message,
+            "current_agent": "",
+            "intent": "",
+            "extracted_date": None,
+            "draft_response": "",
+            "compliance_flag": False,
+            "compliance_notes": "",
+            "payment_link": txn.get("payment_link"),
+            "final_response": "",
+            "reasoning": "",
+        }
+
+        result = chat_recovery_engine.invoke(agent_state)
+
+        intent = result.get("intent", "GENERAL")
+        extracted_date = result.get("extracted_date")
+        reply_text = result.get("final_response") or result.get("draft_response")
+        payment_link = result.get("payment_link")
+        reasoning = result.get("reasoning", "")
+        compliance_flag = result.get("compliance_flag", False)
+
+    except Exception as agent_err:
+        print(f"[AGENT ERROR] Multi-agent graph error: {agent_err}")
+        # Rule-based fallback
+        fallback = _fallback_response(req.message)
+        intent = fallback["intent"]
+        extracted_date = fallback.get("extracted_date")
+        reply_text = fallback["reply_text"]
+        payment_link = None
+        reasoning = f"Fallback rule-based reply: {intent}"
+        compliance_flag = False
+
+    # Persist state & audit log to Database
+    try:
+        if intent == "PROMISE_TO_PAY":
             cursor.execute(
                 """
                 UPDATE transactions
                 SET status = 'PROMISED_TO_PAY', promise_to_pay_date = ?
                 WHERE id = ?
                 """,
-                (parsed.get("extracted_date"), req.transaction_id),
+                (extracted_date, req.transaction_id),
             )
-
             cursor.execute(
                 """
                 INSERT INTO audit_logs (transaction_id, stage, action_taken, reasoning)
@@ -260,12 +276,21 @@ def chat_simulate(req: ChatRequest):
                 (
                     req.transaction_id,
                     "CHAT_SIMULATE",
-                    f"Customer promised to pay. Date: {parsed.get('extracted_date', 'unspecified')}",
-                    f"Intent: {parsed['intent']}. AI drafted empathetic Hinglish follow-up with reminder confirmation.",
+                    f"Customer promised to pay on {extracted_date or 'unspecified date'}",
+                    reasoning or "Supervisor routed to Negotiator; Compliance approved.",
                 ),
             )
 
-        elif parsed["intent"] == "REQUEST_LINK":
+        elif intent == "REQUEST_LINK":
+            if payment_link:
+                cursor.execute(
+                    """
+                    UPDATE transactions
+                    SET payment_link = ?, status = 'CONTACTED'
+                    WHERE id = ?
+                    """,
+                    (payment_link, req.transaction_id),
+                )
             cursor.execute(
                 """
                 INSERT INTO audit_logs (transaction_id, stage, action_taken, reasoning)
@@ -274,12 +299,12 @@ def chat_simulate(req: ChatRequest):
                 (
                     req.transaction_id,
                     "CHAT_SIMULATE",
-                    "Customer requested a new payment link. Link regenerated.",
-                    f"Intent: {parsed['intent']}. AI provided fresh Razorpay recovery link.",
+                    f"Generated payment link: {payment_link or 'test link'}",
+                    reasoning or "Supervisor routed to Payment node directly.",
                 ),
             )
 
-        elif parsed["intent"] == "DISPUTE":
+        elif intent == "DISPUTE":
             cursor.execute(
                 """
                 INSERT INTO audit_logs (transaction_id, stage, action_taken, reasoning)
@@ -288,8 +313,8 @@ def chat_simulate(req: ChatRequest):
                 (
                     req.transaction_id,
                     "CHAT_SIMULATE",
-                    "Customer raised a payment dispute. Case escalated for review.",
-                    f"Intent: {parsed['intent']}. AI acknowledged dispute and assured 24-48h resolution.",
+                    "Customer raised payment dispute. Escalated to support.",
+                    reasoning or "Dispute resolution response drafted and verified by Compliance.",
                 ),
             )
 
@@ -302,8 +327,8 @@ def chat_simulate(req: ChatRequest):
                 (
                     req.transaction_id,
                     "CHAT_SIMULATE",
-                    f"General conversation. Customer said: {req.message[:100]}",
-                    f"Intent: {parsed['intent']}. Standard conversational response.",
+                    f"Conversational response: {req.message[:80]}...",
+                    reasoning or "General conversational outreach.",
                 ),
             )
 
@@ -313,9 +338,10 @@ def chat_simulate(req: ChatRequest):
     finally:
         conn.close()
 
-    # ------ Step 3: Return to Frontend ------
     return {
-        "reply_text": parsed["reply_text"],
-        "intent": parsed["intent"],
-        "extracted_date": parsed.get("extracted_date"),
+        "reply_text": reply_text,
+        "intent": intent,
+        "extracted_date": extracted_date,
+        "payment_link": payment_link,
+        "compliance_flag": compliance_flag,
     }
