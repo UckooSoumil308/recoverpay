@@ -45,16 +45,23 @@ def init_db() -> None:
         );
 
         CREATE TABLE IF NOT EXISTS audit_logs (
-            id              INTEGER     PRIMARY KEY AUTOINCREMENT,
-            transaction_id  TEXT        NOT NULL,
-            stage           TEXT        NOT NULL,
-            action_taken    TEXT        NOT NULL,
-            reasoning       TEXT,
-            timestamp       TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            id                  INTEGER     PRIMARY KEY AUTOINCREMENT,
+            transaction_id      TEXT        NOT NULL,
+            stage               TEXT        NOT NULL,
+            action_taken        TEXT        NOT NULL,
+            reasoning           TEXT,
+            compliance_metadata TEXT,
+            timestamp           TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (transaction_id) REFERENCES transactions (id)
         );
         """
     )
+
+    # Migration for existing databases without compliance_metadata column
+    try:
+        cursor.execute("ALTER TABLE audit_logs ADD COLUMN compliance_metadata TEXT;")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     conn.commit()
     conn.close()

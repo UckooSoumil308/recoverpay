@@ -4,6 +4,7 @@ import Hero from './components/Hero'
 import BatchLedger from './components/BatchLedger'
 import Simulator from './components/Simulator'
 import AuditTrail from './components/AuditTrail'
+import { useWebSocket } from './hooks/useWebSocket'
 import './index.css'
 
 const ParticleCanvas = () => {
@@ -116,8 +117,48 @@ const ParticleCanvas = () => {
 }
 
 function App() {
-  const [transactions, setTransactions] = useState([])
-  const [auditTrigger, setAuditTrigger] = useState(0)
+  const [transactions, setTransactions] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [highlightedTxnId, setHighlightedTxnId] = useState(null);
+  const [auditTrigger, setAuditTrigger] = useState(0);
+  const highlightTimerRef = useRef(null);
+
+  // Shared WebSocket Message Handler
+  const handleWebSocketMessage = React.useCallback((data) => {
+    if (data && data.type === 'TRANSACTION_UPDATED') {
+      // Dynamically update the transaction row in BatchLedger without full refetch
+      if (data.transaction) {
+        setTransactions((prev) => {
+          const index = prev.findIndex((t) => t.id === data.transaction.id);
+          if (index !== -1) {
+            const copy = [...prev];
+            copy[index] = { ...copy[index], ...data.transaction };
+            return copy;
+          }
+          return [data.transaction, ...prev];
+        });
+
+        // Trigger brief border highlight animation (ring-2 ring-orange-500/50)
+        setHighlightedTxnId(data.transaction.id);
+        if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+        highlightTimerRef.current = setTimeout(() => {
+          setHighlightedTxnId(null);
+        }, 3000);
+      }
+
+      // Dynamically prepend the new audit log in real time
+      if (data.audit_log) {
+        setAuditLogs((prev) => {
+          const exists = prev.some((l) => l.id === data.audit_log.id && l.id !== undefined);
+          if (exists) return prev;
+          return [data.audit_log, ...prev];
+        });
+      }
+    }
+  }, []);
+
+  // Shared WebSocket Hook
+  const { isConnected } = useWebSocket(handleWebSocketMessage);
 
   return (
     <div className="dark bg-[#020202] text-slate-200 min-h-screen selection:bg-orange-500/30 selection:text-orange-200 font-sans antialiased overflow-x-hidden scroll-smooth">
@@ -130,12 +171,37 @@ function App() {
       </div>
       <div className="fixed inset-0 bg-grid-slate pointer-events-none -z-20"></div>
 
+      {/* Floating Real-Time WebSocket Connection Badge */}
+      <div className="fixed bottom-4 right-4 z-50 pointer-events-none sm:pointer-events-auto">
+        <div
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-mono backdrop-blur-md border shadow-xl transition-all ${
+            isConnected
+              ? 'bg-emerald-950/80 border-emerald-500/30 text-emerald-300'
+              : 'bg-zinc-900/80 border-zinc-700 text-zinc-400'
+          }`}
+        >
+          <span className="relative flex h-2 w-2">
+            {isConnected && (
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            )}
+            <span
+              className={`relative inline-flex rounded-full h-2 w-2 ${
+                isConnected ? 'bg-emerald-400' : 'bg-zinc-500'
+              }`}
+            ></span>
+          </span>
+          <span>{isConnected ? 'Real-Time WebSocket: Live' : 'WebSocket: Connecting...'}</span>
+        </div>
+      </div>
+
       <Navbar />
       <Hero transactions={transactions} />
       <BatchLedger 
         transactions={transactions} 
         setTransactions={setTransactions} 
-        onBatchComplete={() => setAuditTrigger(prev => prev + 1)}
+        highlightedTxnId={highlightedTxnId}
+        isLiveConnected={isConnected}
+        onBatchComplete={() => setAuditTrigger((prev) => prev + 1)}
       />
 
       {/* Simulator & Audit Trail Section */}
@@ -143,7 +209,12 @@ function App() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
             <Simulator />
-            <AuditTrail trigger={auditTrigger} />
+            <AuditTrail
+              trigger={auditTrigger}
+              auditLogs={auditLogs}
+              setAuditLogs={setAuditLogs}
+              isLiveConnected={isConnected}
+            />
           </div>
         </div>
       </section>
@@ -162,3 +233,4 @@ function App() {
 }
 
 export default App
+

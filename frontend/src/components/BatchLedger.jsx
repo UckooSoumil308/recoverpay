@@ -3,31 +3,36 @@ import { Zap, ExternalLink, MessageSquare, ChevronDown, ChevronUp, Copy, Check }
 
 const API_BASE = 'http://127.0.0.1:8000';
 
-const BatchLedger = ({ transactions, setTransactions, onBatchComplete }) => {
+const BatchLedger = ({
+  transactions,
+  setTransactions,
+  onBatchComplete,
+  highlightedTxnId,
+  isLiveConnected,
+}) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [expandedTxnId, setExpandedTxnId] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
 
-  const fetchTransactions = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/transactions`);
-      const data = await res.json();
-      setTransactions(data);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   useEffect(() => {
+    const fetchTransactions = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/transactions`);
+        const data = await res.json();
+        setTransactions(data);
+      } catch (err) {
+        console.error(err);
+      }
+    };
     fetchTransactions();
-  }, []);
+  }, [setTransactions]);
 
   const handleRunEngine = async () => {
     if (isProcessing) return;
     setIsProcessing(true);
     try {
       await fetch(`${API_BASE}/api/run-batch`, { method: 'POST' });
-      await fetchTransactions();
+      // Live updates arrive automatically via WebSocket!
       if (onBatchComplete) onBatchComplete();
     } catch (err) {
       console.error(err);
@@ -112,7 +117,15 @@ const BatchLedger = ({ transactions, setTransactions, onBatchComplete }) => {
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-1 bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
 
           <div className="px-8 py-4 bg-[#111111]/80 border-b border-white/5 flex items-center justify-between text-xs text-zinc-400 font-mono">
-            <span>💡 Click any transaction row to inspect payment links, outreach details & language preferences</span>
+            <div className="flex items-center gap-3">
+              <span>💡 Click any transaction row to inspect payment links, outreach details & language preferences</span>
+              {isLiveConnected && (
+                <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  Live WebSocket Sync Active
+                </span>
+              )}
+            </div>
             <span className="text-zinc-500 hidden sm:inline">{transactions.length} Total Records</span>
           </div>
 
@@ -133,13 +146,18 @@ const BatchLedger = ({ transactions, setTransactions, onBatchComplete }) => {
                 {transactions.map((txn) => {
                   const styles = getStatusStyle(txn.status);
                   const isExpanded = expandedTxnId === txn.id;
+                  const isHighlighted = highlightedTxnId === txn.id;
 
                   return (
                     <React.Fragment key={txn.id}>
                       <tr
                         onClick={() => toggleRow(txn.id)}
-                        className={`hover:bg-white/[0.04] transition-colors cursor-pointer select-none ${
-                          isExpanded ? 'bg-white/[0.03]' : ''
+                        className={`transition-all duration-500 cursor-pointer select-none ${
+                          isHighlighted
+                            ? 'ring-2 ring-orange-500/50 bg-orange-500/10 shadow-[0_0_20px_rgba(249,115,22,0.3)] animate-pulse'
+                            : isExpanded
+                            ? 'bg-white/[0.03]'
+                            : 'hover:bg-white/[0.04]'
                         }`}
                       >
                         <td className="px-6 py-5 text-zinc-400 font-mono text-xs">{txn.id}</td>

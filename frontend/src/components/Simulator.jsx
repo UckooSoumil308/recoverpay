@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Phone,
   Smile,
@@ -12,9 +12,10 @@ import {
   Mic,
   MicOff,
   Radio,
-  ExternalLink,
+  CreditCard,
 } from 'lucide-react';
 import { useSpeech } from '../hooks/useSpeech';
+import RazorpayModal from './RazorpayModal';
 
 const API_BASE = 'http://127.0.0.1:8000';
 
@@ -59,6 +60,8 @@ const Simulator = () => {
   const [customInput, setCustomInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [autoTtsEnabled, setAutoTtsEnabled] = useState(true);
+  const [isRazorpayOpen, setIsRazorpayOpen] = useState(false);
+  const [modalKey, setModalKey] = useState(0);
   const [messages, setMessages] = useState([
     {
       id: 'agent-init',
@@ -237,6 +240,22 @@ const Simulator = () => {
     }
   };
 
+  // Handle successful payment from RazorpayModal
+  const handlePaymentSuccess = useCallback(({ paymentId, method }) => {
+    const confirmMsg = {
+      id: `agent-pay-${Date.now()}`,
+      sender: 'agent',
+      text: `Payment successful! ✅ Aapka subscription activate ho gaya hai. Transaction ID: ${paymentId}. Method: ${method}. Dhanyavaad! 🙏`,
+      intent: 'PAYMENT_SUCCESS',
+      hasCta: false,
+    };
+    setMessages((prev) => [...prev, confirmMsg]);
+
+    if (autoTtsEnabled) {
+      speak(confirmMsg.text, 'hi-IN', `sim-${confirmMsg.id}`);
+    }
+  }, [autoTtsEnabled, speak]);
+
   const getIntentBadge = (intent) => {
     if (!intent) return null;
     const badges = {
@@ -245,6 +264,7 @@ const Simulator = () => {
       DISPUTE: { label: '⚠️ Dispute', cls: 'bg-red-500/15 text-red-300 border-red-500/30' },
       GENERAL: { label: '💬 General', cls: 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30' },
       ERROR: { label: '❌ Error', cls: 'bg-red-500/15 text-red-300 border-red-500/30' },
+      PAYMENT_SUCCESS: { label: '✅ Recovered', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' },
     };
     const badge = badges[intent] || badges.GENERAL;
     return (
@@ -342,7 +362,6 @@ const Simulator = () => {
             const isAgent = msg.sender === 'agent';
             const speechKey = `sim-${msg.id}`;
             const isThisSpeaking = isSpeaking && activeSpeechId === speechKey;
-            const linkToOpen = msg.paymentLink || selectedPersona.paymentLink;
 
             return (
               <div
@@ -399,17 +418,16 @@ const Simulator = () => {
                   </div>
                 )}
 
-                {/* WORKING RAZORPAY CTA LINK */}
+                {/* IN-APP RAZORPAY CHECKOUT CTA */}
                 {msg.hasCta && (
-                  <a
-                    href={linkToOpen}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-2.5 px-3 py-2 bg-[#00a884] hover:bg-[#008f6f] text-white font-semibold rounded-xl text-xs transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1.5"
+                  <button
+                    type="button"
+                    onClick={() => { setModalKey((k) => k + 1); setIsRazorpayOpen(true); }}
+                    className="mt-2.5 px-3 py-2 bg-gradient-to-r from-[#0066cc] to-[#0088ff] hover:from-[#0055bb] hover:to-[#0077ee] text-white font-semibold rounded-xl text-xs transition-all shadow-lg shadow-blue-500/20 active:scale-95 flex items-center justify-center gap-1.5 w-full"
                   >
+                    <CreditCard className="w-3.5 h-3.5" />
                     <span>Pay {selectedPersona.amount} via Razorpay</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                  </button>
                 )}
               </div>
             );
@@ -549,6 +567,17 @@ const Simulator = () => {
           </button>
         </form>
       </div>
+
+      {/* Razorpay In-App Checkout Modal */}
+      <RazorpayModal
+        key={modalKey}
+        isOpen={isRazorpayOpen}
+        onClose={() => setIsRazorpayOpen(false)}
+        transactionId={selectedPersona.id}
+        amountInr={parseFloat(selectedPersona.amount.replace(/[^\d.]/g, ''))}
+        customerName={selectedPersona.name}
+        onPaymentSuccess={handlePaymentSuccess}
+      />
     </div>
   );
 };

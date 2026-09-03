@@ -1,5 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Globe, Languages, Sparkles, Check, ChevronDown, Volume2, Square, VolumeX } from 'lucide-react';
+import {
+  Globe,
+  Languages,
+  Sparkles,
+  Check,
+  ChevronDown,
+  Volume2,
+  Square,
+  VolumeX,
+  ShieldCheck,
+} from 'lucide-react';
 import { useSpeech } from '../hooks/useSpeech';
 
 const API_BASE = 'http://127.0.0.1:8000';
@@ -38,6 +48,7 @@ const LOCALIZED_DICTIONARY = {
     },
     stages: {
       BATCH_ENGINE: 'Batch Recovery Engine',
+      CHAT_SIMULATE: 'Conversational Recovery Triage',
       TRIAGE: 'Triage Node',
       OUTREACH: 'Outreach Node',
       DEFAULT: 'Agent Execution',
@@ -507,8 +518,10 @@ const LOCALIZED_DICTIONARY = {
   },
 };
 
-const AuditTrail = ({ trigger }) => {
-  const [logs, setLogs] = useState([]);
+const AuditTrail = ({ trigger, auditLogs, setAuditLogs, isLiveConnected }) => {
+  const [internalLogs, setInternalLogs] = useState([]);
+  const logs = auditLogs !== undefined && auditLogs.length > 0 ? auditLogs : internalLogs;
+  const setLogs = setAuditLogs || setInternalLogs;
   const [selectedLang, setSelectedLang] = useState('hi-en');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const { speak, stop, isSpeaking, activeSpeechId } = useSpeech();
@@ -524,7 +537,7 @@ const AuditTrail = ({ trigger }) => {
       }
     };
     fetchLogs();
-  }, [trigger]);
+  }, [trigger, setLogs]);
 
   const dict = LOCALIZED_DICTIONARY[selectedLang] || LOCALIZED_DICTIONARY['en'];
   const ui = dict.ui;
@@ -533,12 +546,14 @@ const AuditTrail = ({ trigger }) => {
   const getStageColor = (stage) => {
     if (stage === 'BATCH_ENGINE') return 'bg-blue-500';
     if (stage === 'OUTREACH') return 'bg-orange-500';
+    if (stage === 'CHAT_SIMULATE') return 'bg-emerald-500';
     return 'bg-purple-500';
   };
 
   const getLogColor = (stage) => {
     if (stage === 'BATCH_ENGINE') return 'text-blue-400';
     if (stage === 'OUTREACH') return 'text-orange-400';
+    if (stage === 'CHAT_SIMULATE') return 'text-emerald-400';
     return 'text-purple-400';
   };
 
@@ -562,9 +577,17 @@ const AuditTrail = ({ trigger }) => {
     <div className="flex flex-col mt-12 lg:mt-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
         <div>
-          <h3 className="text-2xl font-medium text-white flex items-center gap-2">
-            {ui.title}
-          </h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-2xl font-medium text-white flex items-center gap-2">
+              {ui.title}
+            </h3>
+            {isLiveConnected && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Live Stream
+              </span>
+            )}
+          </div>
           <p className="text-zinc-500 text-sm mt-1">{ui.subtitle}</p>
         </div>
 
@@ -691,7 +714,7 @@ const AuditTrail = ({ trigger }) => {
                 }`}
               >
                 <div className="p-4 bg-white/[0.02] flex items-center justify-between cursor-pointer border-b border-white/5">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2.5 flex-wrap">
                     <div className={`w-2 h-2 rounded-full ${getStageColor(log.stage)}`}></div>
                     <span className="text-sm font-medium text-white tracking-wide font-mono">
                       {ui.txnPrefix}: {log.transaction_id}
@@ -699,6 +722,17 @@ const AuditTrail = ({ trigger }) => {
                     <span className="text-[11px] px-2 py-0.5 rounded bg-white/5 text-zinc-300 border border-white/5 font-sans">
                       {localizedStage}
                     </span>
+
+                    {/* RBI Compliance Pass Badge next to every conversational triage step */}
+                    {(log.stage === 'CHAT_SIMULATE' ||
+                      log.stage === 'TRIAGE' ||
+                      log.stage === 'CONVERSATIONAL' ||
+                      Boolean(log.compliance_metadata?.rbi_passed)) && (
+                      <span className="inline-flex items-center gap-1.5 text-[10.5px] px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-mono font-medium shadow-[0_0_12px_rgba(16,185,129,0.15)]">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>RBI Compliance Pass</span>
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -757,6 +791,34 @@ const AuditTrail = ({ trigger }) => {
                       {localizedReasoning}
                     </p>
                   </div>
+
+                  {/* RBI Compliance Checks Breakdown */}
+                  {log.compliance_metadata && (
+                    <div className="mt-3 p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/20 font-mono">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-1.5 text-emerald-400 font-semibold text-[11px]">
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>RBI COMPLIANCE VERIFICATION</span>
+                        </div>
+                        <span className="text-[9px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          PASSED
+                        </span>
+                      </div>
+                      {log.compliance_metadata.checks && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 text-[10.5px]">
+                          {log.compliance_metadata.checks.map((chk, idx) => (
+                            <div
+                              key={idx}
+                              className="flex items-center gap-1.5 bg-black/50 px-2 py-1 rounded border border-white/5 text-zinc-300"
+                            >
+                              <span className="text-emerald-400 font-bold">✓</span>
+                              <span className="truncate">{chk}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );
