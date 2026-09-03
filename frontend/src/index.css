@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', sans-serif;
+  
+  --color-page: #050505;
+  --color-card: #0a0a0a;
+  --color-primary: #f97316;
+
+  --animate-spotlight: spotlight 2s ease .75s 1 forwards;
+  --animate-shimmer: shimmer 2s linear infinite;
+  --animate-pulse-glow: pulse-glow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+  @keyframes spotlight {
+    0% { opacity: 0; transform: translate(-72%, -62%) scale(0.5); }
+    100% { opacity: 1; transform: translate(-50%,-40%) scale(1); }
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  @keyframes pulse-glow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .5; }
+  }
+}
+
+body {
+  background-color: #020202;
+  color: #e2e8f0;
+  overflow-x: hidden;
+}
+
+@utility bg-grid-slate {
+  background-size: 50px 50px;
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  mask-image: linear-gradient(to bottom, black 10%, transparent 90%);
+  -webkit-mask-image: linear-gradient(to bottom, black 10%, transparent 90%);
+}
+
+@utility text-metallic {
+  background: linear-gradient(to bottom, #ffffff 40%, #71717a);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar { 
+  width: 0px; 
+  background: transparent; 
+}
+
+/* 3D Dashboard Transform */
+.perspective-container {
+  perspective: 1200px;
+}
+.transform-3d-card {
+  transform-style: preserve-3d;
+  transition: transform 0.1s ease-out;
+}
+.pop-out {
+  transform: translateZ(20px);
+}
+
+/* Shine Button Effect */
+.shine-button {
+  position: relative;
+  overflow: hidden;
+}
+.shine-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(to right, transparent, rgba(255,255,255,0.2), transparent);
+  transform: skewX(-20deg);
+  transition: 0.5s;
+}
+.shine-button:hover::before {
+  left: 200%;
+  transition: 0.7s ease-in-out;
+}
+
+/* Canvas Particle Layer */
+#particle-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -15;
+  pointer-events: none;
+}
