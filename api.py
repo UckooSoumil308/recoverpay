@@ -1,6 +1,6 @@
 # api.py
-import os
 import json
+import os
 from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from agent_engine import recovery_engine, chat_recovery_engine
+from agent_engine import chat_recovery_engine, recovery_engine
 from database import get_connection
 
 load_dotenv()
@@ -579,18 +579,23 @@ async def chat_simulate(req: ChatRequest):
 # Serve React Frontend SPA (frontend/dist)
 # ---------------------------------------------------------------------------
 frontend_dist = os.path.join(os.path.dirname(__file__), "frontend", "dist")
-if os.path.isdir(frontend_dist):
-    assets_dir = os.path.join(frontend_dist, "assets")
-    if os.path.isdir(assets_dir):
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="static-assets")
+assets_dir = os.path.join(frontend_dist, "assets")
+if os.path.isdir(assets_dir):
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="static-assets")
 
-    @app.get("/{full_path:path}")
-    def serve_frontend(full_path: str):
-        file_path = os.path.join(frontend_dist, full_path)
-        if full_path and os.path.isfile(file_path):
-            return FileResponse(file_path)
-        index_file = os.path.join(frontend_dist, "index.html")
-        if os.path.isfile(index_file):
-            return FileResponse(index_file)
-        return {"detail": "Not Found"}
+
+@app.get("/{full_path:path}")
+def serve_frontend(full_path: str = ""):
+    file_path = os.path.join(frontend_dist, full_path)
+    if full_path and os.path.isfile(file_path):
+        return FileResponse(file_path)
+    index_file = os.path.join(frontend_dist, "index.html")
+    if os.path.isfile(index_file):
+        return FileResponse(index_file)
+    return {
+        "detail": "Not Found",
+        "service": "RecoverPay-API",
+        "message": "Frontend static build not detected. Deploy or build frontend to serve UI.",
+    }
+
 
