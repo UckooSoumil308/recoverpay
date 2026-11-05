@@ -11,8 +11,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { useSpeech } from '../hooks/useSpeech';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+import { API_BASE } from '../config';
 
 const INDIAN_LANGUAGES = [
   { id: 'en', name: 'English', native: 'English', tag: 'Global' },
