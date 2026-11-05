@@ -28,6 +28,13 @@ app.add_middleware(
 )
 
 
+@app.get("/health")
+def health_check():
+    """Health check endpoint for Docker, AWS ECS, and Render."""
+    return {"status": "healthy", "service": "RecoverPay-API"}
+
+
+
 # ---------------------------------------------------------------------------
 # WebSocket Real-Time Event Broadcaster
 # ---------------------------------------------------------------------------
