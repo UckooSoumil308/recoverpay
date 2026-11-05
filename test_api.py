@@ -81,3 +81,12 @@ def test_github_actions_workflow_exists():
     assert "ENABLE_AWS_ECS" in content
     assert "id-token: write" in content
 
+
+def test_frontend_serving():
+    """Verify frontend SPA index.html is served for the root path."""
+    from api import serve_frontend
+    response = serve_frontend("")
+    assert response.status_code == 200
+    assert "index.html" in response.path
+
+

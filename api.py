@@ -1,4 +1,5 @@
 # api.py
+import os
 import json
 from datetime import datetime, timedelta
 
@@ -6,6 +7,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from agent_engine import recovery_engine, chat_recovery_engine
@@ -570,3 +573,24 @@ async def chat_simulate(req: ChatRequest):
         "compliance_flag": compliance_flag,
         "compliance_metadata": compliance_metadata,
     }
+
+
+# ---------------------------------------------------------------------------
+# Serve React Frontend SPA (frontend/dist)
+# ---------------------------------------------------------------------------
+frontend_dist = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+if os.path.isdir(frontend_dist):
+    assets_dir = os.path.join(frontend_dist, "assets")
+    if os.path.isdir(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="static-assets")
+
+    @app.get("/{full_path:path}")
+    def serve_frontend(full_path: str):
+        file_path = os.path.join(frontend_dist, full_path)
+        if full_path and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        index_file = os.path.join(frontend_dist, "index.html")
+        if os.path.isfile(index_file):
+            return FileResponse(index_file)
+        return {"detail": "Not Found"}
+
